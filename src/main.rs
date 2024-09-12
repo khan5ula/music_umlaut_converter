@@ -6,11 +6,12 @@ use lofty::tag::{ItemKey, Tag};
 use std::env;
 use std::ffi::OsStr;
 use std::fs::{self};
-use std::io;
+use std::io::{self, Write};
 use std::path::Path;
 use std::path::PathBuf;
 
-fn main() -> io::Result<()> {
+#[allow(clippy::comparison_chain)]
+fn main() -> Result<(), String> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
@@ -22,11 +23,41 @@ fn main() -> io::Result<()> {
     }
 
     let working_dir = &args[1];
-    println!("Umlaut converter is starting.");
-    visit_dirs(Path::new(working_dir))?;
 
-    println!("Umlaut converter is finished.");
-    Ok(())
+    print!(
+        "Going to permanently edit records in directory {}, are you sure you want to continue? [y]/[n]\n==> ",
+        working_dir
+    );
+
+    let _ = io::stdout().flush();
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .expect("Failed to read input");
+
+    match input.trim().chars().next() {
+        Some('y') => {
+            println!("Umlaut converter is starting.");
+            match visit_dirs(Path::new(working_dir), 0) {
+                Ok(edited_count) => {
+                    println!(
+                        "Umlaut converter is finished. Edited total of {} records.",
+                        edited_count
+                    );
+                    Ok(())
+                }
+                Err(e) => {
+                    eprintln!("The converter failed: {}", e);
+                    Err(e)
+                }
+            }
+        }
+        _ => {
+            println!("Aborting");
+            std::process::exit(1);
+        }
+    }
 }
 
 fn rename_file_or_dir(file: &Path) -> io::Result<PathBuf> {
@@ -39,7 +70,7 @@ fn rename_file_or_dir(file: &Path) -> io::Result<PathBuf> {
                 Ok(()) => Ok(new_file_path),
                 Err(error) => {
                     println!(
-                        "Couldn't rename the file {} to {}: {}",
+                        "Couldn't rename from {} to {}: {}",
                         file.display(),
                         new_filename,
                         error
@@ -53,7 +84,7 @@ fn rename_file_or_dir(file: &Path) -> io::Result<PathBuf> {
     } else {
         Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "Invalid file name",
+            "Invalid record name",
         ))
     }
 }
@@ -70,18 +101,23 @@ fn convert_tags(tag: &mut Tag, item_key: ItemKey) -> bool {
     false
 }
 
-fn visit_dirs(dir: &Path) -> io::Result<()> {
+fn visit_dirs(dir: &Path, mut edited: i32) -> Result<i32, String> {
     if dir.is_dir() {
         // Convert umplauts from directory names
-        let renamed_dir = rename_file_or_dir(dir)?;
+        let renamed_dir = rename_file_or_dir(dir).map_err(|e| e.to_string())?;
         // Read the directory contents
-        for entry in fs::read_dir(renamed_dir)? {
-            let path = entry?.path();
+        for entry in fs::read_dir(renamed_dir).map_err(|e| e.to_string())? {
+            let path = entry.map_err(|e| e.to_string())?.path();
+
+            // If directory is found, traverse recursively
             if path.is_dir() {
-                // If directory is found, visit recursively
-                visit_dirs(&path)?;
-            } else {
-                let renamed_path = rename_file_or_dir(&path)?;
+                edited = visit_dirs(&path, edited)?;
+
+            // If the file is in desired format, process it
+            } else if path.display().to_string().contains(".mp3")
+                || path.display().to_string().contains(".flac")
+            {
+                let renamed_path = rename_file_or_dir(&path).map_err(|e| e.to_string())?;
                 match read_from_path(&renamed_path) {
                     Ok(mut tagged_file) => {
                         if let Some(tag) = tagged_file.primary_tag_mut() {
@@ -98,15 +134,20 @@ fn visit_dirs(dir: &Path) -> io::Result<()> {
                                     Ok(_) => {}
                                     Err(error) => println!("Failed to save tags: {}", error),
                                 }
+                                edited += 1;
                             }
                         }
                     }
-                    Err(error) => println!("Couldn't read the file: {}", error),
+                    Err(error) => println!(
+                        "Couldn't read the file {} because: {}",
+                        renamed_path.display(),
+                        error
+                    ),
                 };
             }
         }
     }
-    Ok(())
+    Ok(edited)
 }
 
 fn convert_umlauts(src: String) -> String {
