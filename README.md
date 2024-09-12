@@ -1,6 +1,6 @@
 # Umlaut converter
 
-This is a little utility thingy I use to clean my .mp3/flac/etc. media files from umlauts (ä's and ä's) before transferring them to my digital audio player, which, unfortunately, does not support such characters.
+This is a little utility thingy I use to clean my .mp3/flac/etc. media files from umlauts (ä's and ö's) before transferring them to my digital audio player, which, unfortunately, does not support such characters.
 
 ## Usage
 
