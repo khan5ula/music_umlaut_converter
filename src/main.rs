@@ -95,12 +95,7 @@ fn visit_dirs(dir: &Path) -> io::Result<()> {
                                 match tagged_file
                                     .save_to_path(&renamed_path, WriteOptions::default())
                                 {
-                                    Ok(_) => {
-                                        println!(
-                                            "Tags updated successfully for: {}",
-                                            &renamed_path.display()
-                                        )
-                                    }
+                                    Ok(_) => {}
                                     Err(error) => println!("Failed to save tags: {}", error),
                                 }
                             }
